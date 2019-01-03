@@ -29,12 +29,13 @@ import { DateRange, FixedTimeFilterClause, NumberFilterClause, NumberRange as Fi
 import { Filter } from "../../../common/models/filter/filter";
 import { getBestBucketUnitForRange } from "../../../common/models/granularity/granularity";
 import { Measure, MeasureDerivation } from "../../../common/models/measure/measure";
+import { SeriesFormat } from "../../../common/models/series/series";
 import { Split } from "../../../common/models/split/split";
 import { Splits } from "../../../common/models/splits/splits";
 import { Stage } from "../../../common/models/stage/stage";
 import { Timekeeper } from "../../../common/models/timekeeper/timekeeper";
 import { DatasetLoad, VisualizationProps } from "../../../common/models/visualization-props/visualization-props";
-import { formatValue } from "../../../common/utils/formatter/formatter";
+import { formatValue, seriesFormatter } from "../../../common/utils/formatter/formatter";
 import { concatTruthy, flatMap, mapTruthy, Unary } from "../../../common/utils/functional/functional";
 import { readNumber } from "../../../common/utils/general/general";
 import { union } from "../../../common/utils/plywood/range";
@@ -331,6 +332,7 @@ export class LineChart extends BaseVisualization<LineChartState> {
   renderChartBubble(
     dataset: Dataset,
     measure: Measure,
+    format: SeriesFormat,
     chartIndex: number,
     containerStage: Stage,
     chartStage: Stage,
@@ -342,6 +344,8 @@ export class LineChart extends BaseVisualization<LineChartState> {
 
     const { containerYPosition, containerXPosition, scrollTop, dragRange, roundDragRange } = this.state;
     const { dragOnMeasure, scaleX, hoverRange, hoverMeasure, continuousDimension } = this.state;
+
+    const formatter = seriesFormatter(format, measure);
 
     if (essence.highlightOnDifferentMeasure(LineChart.id, measure.name)) return null;
 
@@ -371,11 +375,11 @@ export class LineChart extends BaseVisualization<LineChartState> {
           return {
             color: colorValues[i],
             name: String(segment),
-            value: measure.formatDatum(hoverDatum),
+            value: measure.formatDatum(hoverDatum, format),
             delta: essence.hasComparison() && <Delta
               currentValue={hoverDatum[measure.name] as number}
               previousValue={hoverDatum[measure.getDerivedName(MeasureDerivation.PREVIOUS)] as number}
-              formatter={measure.formatFn}
+              formatter={formatter}
               lowerIsBetter={measure.lowerIsBetter}
             />
           };
@@ -392,7 +396,7 @@ export class LineChart extends BaseVisualization<LineChartState> {
         const leftOffset = containerXPosition + VIS_H_PADDING + scaleX(bubbleRange.midpoint());
         const segmentLabel = formatValue(shownRange, timezone, DisplayYear.NEVER);
         const highlightDatum = dataset.findDatumByAttribute(continuousDimension.name, shownRange);
-        const measureLabel = highlightDatum ? measure.formatDatum(highlightDatum) : null;
+        const measureLabel = highlightDatum ? measure.formatDatum(highlightDatum, format) : null;
 
         return <SegmentBubble
           left={leftOffset}
@@ -424,7 +428,7 @@ export class LineChart extends BaseVisualization<LineChartState> {
           const currentEntry: ColorEntry = {
             color: colorValues[i],
             name: String(segment),
-            value: measure.formatDatum(hoverDatum)
+            value: measure.formatDatum(hoverDatum, format)
           };
 
           if (!hasComparison) {
@@ -434,11 +438,11 @@ export class LineChart extends BaseVisualization<LineChartState> {
           const hoverDatumElement = hoverDatum[measure.getDerivedName(MeasureDerivation.PREVIOUS)] as number;
           return {
             ...currentEntry,
-            previous: measure.formatFn(hoverDatumElement),
+            previous: formatter(hoverDatumElement),
             delta: essence.hasComparison() && <Delta
               currentValue={hoverDatum[measure.name] as number}
               previousValue={hoverDatumElement}
-              formatter={measure.formatFn}
+              formatter={formatter}
               lowerIsBetter={measure.lowerIsBetter}
             />
           };
@@ -455,7 +459,7 @@ export class LineChart extends BaseVisualization<LineChartState> {
         const hoverDatum = dataset.findDatumByAttribute(continuousDimension.name, hoverRange);
         if (!hoverDatum) return null;
         const title = formatValue(hoverRange, timezone, DisplayYear.NEVER);
-        const content = this.renderMeasureLabel(measure, hoverDatum);
+        const content = this.renderMeasureLabel(hoverDatum, measure, format);
 
         return <SegmentBubble
           left={leftOffset}
@@ -470,17 +474,18 @@ export class LineChart extends BaseVisualization<LineChartState> {
     return null;
   }
 
-  private renderMeasureLabel(measure: Measure, datum: Datum): JSXNode {
+  private renderMeasureLabel(datum: Datum, measure: Measure, format: SeriesFormat): JSXNode {
     const currentValue = datum[measure.name] as number;
     if (!this.props.essence.hasComparison()) {
-      return measure.formatFn(currentValue);
+      return measure.formatDatum(datum, format);
     }
     const previous = datum[measure.getDerivedName(MeasureDerivation.PREVIOUS)] as number;
+    const formatter = seriesFormatter(format, measure);
     return <MeasureBubbleContent
       lowerIsBetter={measure.lowerIsBetter}
       current={currentValue}
       previous={previous}
-      formatter={measure.formatFn} />;
+      formatter={formatter} />;
   }
 
   calculateExtend(dataset: Dataset, splits: Splits, getY: Unary<Datum, number>, getYP: Unary<Datum, number>) {
@@ -573,9 +578,10 @@ export class LineChart extends BaseVisualization<LineChartState> {
     });
   }
 
-  renderVerticalAxis(scale: Linear<number, number>, yAxisStage: Stage) {
+  renderVerticalAxis(scale: Linear<number, number>, formatter: Unary<number, string>, yAxisStage: Stage) {
     return <VerticalAxis
       stage={yAxisStage}
+      formatter={formatter}
       ticks={this.calculateTicks(scale)}
       scale={scale}
     />;
@@ -606,9 +612,11 @@ export class LineChart extends BaseVisualization<LineChartState> {
 
   renderChart(dataset: Dataset, measure: Measure, chartIndex: number, containerStage: Stage, chartStage: Stage): JSX.Element {
     const { essence, isThumbnail } = this.props;
+    const { splits, series } = essence;
+    const format = series.getSeries(measure.name).format;
+    const formatter = seriesFormatter(format, measure);
 
     const { hoverMeasure, dragRange, scaleX, xTicks } = this.state;
-    const { splits } = essence;
 
     const lineStage = chartStage.within({ top: TEXT_SPACER, right: Y_AXIS_WIDTH, bottom: 1 }); // leave 1 for border
     const yAxisStage = chartStage.within({ top: TEXT_SPACER, left: lineStage.width, bottom: 1 });
@@ -640,7 +648,7 @@ export class LineChart extends BaseVisualization<LineChartState> {
           stage={lineStage}
         />
         {scale && this.renderChartLines(splitData, isHovered, lineStage, getY, getYP, scale)}
-        {scale && this.renderVerticalAxis(scale, yAxisStage)}
+        {scale && this.renderVerticalAxis(scale, formatter, yAxisStage)}
         <line
           className="vis-bottom"
           x1="0"
@@ -649,9 +657,13 @@ export class LineChart extends BaseVisualization<LineChartState> {
           y2={chartStage.height - 0.5}
         />
       </svg>
-      {!isThumbnail ? <VisMeasureLabel measure={measure} datum={datum} showPrevious={essence.hasComparison()} /> : null}
+      {!isThumbnail && <VisMeasureLabel
+        measure={measure}
+        format={format}
+        datum={datum}
+        showPrevious={essence.hasComparison()} />}
       {this.renderHighlighter()}
-      {scale && this.renderChartBubble(splitData, measure, chartIndex, containerStage, chartStage, extent, scale)}
+      {scale && this.renderChartBubble(splitData, measure, format, chartIndex, containerStage, chartStage, extent, scale)}
     </div>;
 
   }
@@ -789,7 +801,7 @@ export class LineChart extends BaseVisualization<LineChartState> {
     let bottomAxis: JSX.Element;
 
     if (datasetLoad.dataset && splits.length() && axisRange) {
-      const measures = essence.getEffectiveMeasures().toArray();
+      const measures = essence.getEffectiveSelectedMeasures().toArray();
 
       const chartWidth = stage.width - VIS_H_PADDING * 2;
       const chartHeight = Math.max(

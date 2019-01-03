@@ -19,7 +19,7 @@ import { Timezone } from "chronoshift";
 import { Dataset, TabulatorOptions } from "plywood";
 import * as React from "react";
 import * as ReactDOM from "react-dom";
-import { MANIFESTS } from "../../../common/manifests/index";
+import { MANIFESTS } from "../../../common/manifests";
 import { Clicker } from "../../../common/models/clicker/clicker";
 import { Colors } from "../../../common/models/colors/colors";
 import { Customization } from "../../../common/models/customization/customization";
@@ -31,6 +31,8 @@ import { Filter } from "../../../common/models/filter/filter";
 import { Highlight } from "../../../common/models/highlight/highlight";
 import { Manifest } from "../../../common/models/manifest/manifest";
 import { Measure } from "../../../common/models/measure/measure";
+import { SeriesList } from "../../../common/models/series-list/series-list";
+import { Series } from "../../../common/models/series/series";
 import { Split } from "../../../common/models/split/split";
 import { Splits } from "../../../common/models/splits/splits";
 import { Stage } from "../../../common/models/stage/stage";
@@ -47,17 +49,19 @@ import { GlobalEventListener } from "../../components/global-event-listener/glob
 import { ManualFallback } from "../../components/manual-fallback/manual-fallback";
 import { PinboardPanel } from "../../components/pinboard-panel/pinboard-panel";
 import { Direction, ResizeHandle } from "../../components/resize-handle/resize-handle";
+import { SeriesTile } from "../../components/series-tile/series-tile";
 import { SplitTile } from "../../components/split-tile/split-tile";
 import { SvgIcon } from "../../components/svg-icon/svg-icon";
 import { VisSelector } from "../../components/vis-selector/vis-selector";
 import { DruidQueryModal } from "../../modals/druid-query-modal/druid-query-modal";
 import { RawDataModal } from "../../modals/raw-data-modal/raw-data-modal";
+import { UrlShortenerModal } from "../../modals/url-shortener-modal/url-shortener-modal";
 import { ViewDefinitionModal } from "../../modals/view-definition-modal/view-definition-modal";
 import { DragManager } from "../../utils/drag-manager/drag-manager";
 import { FunctionSlot } from "../../utils/function-slot/function-slot";
 import * as localStorage from "../../utils/local-storage/local-storage";
 import tabularOptions from "../../utils/tabular-options/tabular-options";
-import { getVisualizationComponent } from "../../visualizations/index";
+import { getVisualizationComponent } from "../../visualizations";
 import { CubeHeaderBar } from "./cube-header-bar/cube-header-bar";
 import "./cube-view.scss";
 
@@ -107,6 +111,7 @@ export interface CubeViewState {
   showRawDataModal?: boolean;
   showViewDefinitionModal?: boolean;
   showDruidQueryModal?: boolean;
+  urlShortenerModalProps?: { url: string, title: string };
   layout?: CubeViewLayout;
   deviceSize?: DeviceSize;
   updatingMaxTime?: boolean;
@@ -122,6 +127,10 @@ export interface DataSetWithTabOptions {
 
 export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
   static defaultProps: Partial<CubeViewProps> = { maxFilters: 20 };
+
+  private static canDrop(): boolean {
+    return DragManager.isDraggingDimension();
+  }
 
   public mounted: boolean;
   private readonly clicker: Clicker;
@@ -167,6 +176,18 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
         const { essence } = this.state;
         this.setState({ essence: essence.removeSplit(split, strategy) });
       },
+      changeSeriesList: (seriesList: SeriesList) => {
+        const { essence } = this.state;
+        this.setState({ essence: essence.changeSeriesList(seriesList) });
+      },
+      addSeries: (series: Series) => {
+        const { essence } = this.state;
+        this.setState({ essence: essence.addSeries(series) });
+      },
+      removeSeries: (series: Series) => {
+        const { essence } = this.state;
+        this.setState({ essence: essence.removeSeries(series) });
+      },
       changeColors: (colors: Colors) => {
         const { essence } = this.state;
         this.setState({ essence: essence.changeColors(colors) });
@@ -186,16 +207,6 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
       changePinnedSortMeasure: (measure: Measure) => {
         const { essence } = this.state;
         this.setState({ essence: essence.changePinnedSortMeasure(measure) });
-      },
-      toggleMultiMeasureMode: () => {
-        const { essence } = this.state;
-        this.setState({ essence: essence.toggleMeasureMode() });
-      },
-      toggleEffectiveMeasure: (measure: Measure) => {
-        this.setState(prevState => {
-          const { essence: prevEssence } = prevState;
-          return { essence: prevEssence.toggleEffectiveMeasure(measure) };
-        });
       },
       changeHighlight: (owner: string, measure: string, delta: Filter) => {
         const { essence } = this.state;
@@ -278,6 +289,13 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
     }
   }
 
+  componentDidUpdate(prevProps: CubeViewProps, { layout: { pinboard: prevPinboard, factPanel: prevFactPanel } }: CubeViewState) {
+    const { layout: { pinboard, factPanel } } = this.state;
+    if (pinboard.hidden !== prevPinboard.hidden || factPanel.hidden !== prevFactPanel.hidden) {
+      this.globalResizeListener();
+    }
+  }
+
   componentWillUnmount() {
     const { transitionFnSlot } = this.props;
 
@@ -298,9 +316,7 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
   }
 
   getEssenceFromDataCube(dataCube: DataCube): Essence {
-    const essence = Essence.fromDataCube(dataCube, { dataCube, visualizations: MANIFESTS });
-    const isMulti = !!localStorage.get("is-multi-measure");
-    return essence.measures.isMulti !== isMulti ? essence.toggleMeasureMode() : essence;
+    return Essence.fromDataCube(dataCube, { dataCube, visualizations: MANIFESTS });
   }
 
   getEssenceFromHash(hash: string, dataCube: DataCube): Essence {
@@ -329,23 +345,18 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
     });
   }
 
-  private canDrop(): boolean {
-    return DragManager.getDragDimension() !== null;
-  }
-
   private isSmallDevice(): boolean {
     return this.state.deviceSize === DeviceSize.SMALL;
   }
 
   dragEnter = (e: React.DragEvent<HTMLElement>) => {
-    if (!this.canDrop()) return;
+    if (!CubeView.canDrop()) return;
     e.preventDefault();
     this.setState({ dragOver: true });
   }
 
   dragOver = (e: React.DragEvent<HTMLElement>) => {
-    if (!this.canDrop()) return;
-    e.dataTransfer.dropEffect = "move";
+    if (!CubeView.canDrop()) return;
     e.preventDefault();
   }
 
@@ -354,9 +365,9 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
   }
 
   drop = (e: React.DragEvent<HTMLElement>) => {
-    if (!this.canDrop()) return;
+    if (!CubeView.canDrop()) return;
     e.preventDefault();
-    const dimension = DragManager.getDragDimension();
+    const dimension = DragManager.draggingDimension();
     if (dimension) {
       this.clicker.changeSplit(Split.fromDimension(dimension), VisStrategy.FairGame);
     }
@@ -429,14 +440,30 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
       onClose={this.closeDruidQueryModal} />;
   }
 
+  openUrlShortenerModal = (url: string, title: string) => {
+    this.setState({
+      urlShortenerModalProps: { url, title }
+    });
+  }
+
+  closeUrlShortenerModal = () => {
+    this.setState({
+      urlShortenerModalProps: null
+    });
+  }
+
+  renderUrlShortenerModal() {
+    const { urlShortenerModalProps } = this.state;
+    if (!urlShortenerModalProps) return null;
+    return <UrlShortenerModal
+      title={urlShortenerModalProps.title}
+      url={urlShortenerModalProps.url}
+      onClose={this.closeUrlShortenerModal} />;
+  }
+
   triggerFilterMenu = (dimension: Dimension) => {
     if (!dimension) return;
     (this.refs["filterTile"] as FilterTile).filterMenuRequest(dimension);
-  }
-
-  triggerSplitMenu = (dimension: Dimension) => {
-    if (!dimension) return;
-    (this.refs["splitTile"] as SplitTile).splitMenuRequest(dimension);
   }
 
   changeTimezone = (newTimezone: Timezone) => {
@@ -496,7 +523,7 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
     this.updateLayout({
       ...layout,
       pinboard: {
-        ... pinboard,
+        ...pinboard,
         width
       }
     });
@@ -525,6 +552,7 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
       refreshMaxTime={this.refreshMaxTime}
       openRawDataModal={this.openRawDataModal}
       openViewDefinitionModal={this.openViewDefinitionModal}
+      openUrlShortenerModal={this.openUrlShortenerModal}
       openDruidQueryModal={this.openDruidQueryModal}
       customization={customization}
       getDownloadableDataset={() => this.downloadableDataset}
@@ -542,7 +570,6 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
           essence={essence}
           menuStage={menuStage}
           triggerFilterMenu={this.triggerFilterMenu}
-          triggerSplitMenu={this.triggerSplitMenu}
         />}
         {!this.isSmallDevice() && !layout.factPanel.hidden && <ResizeHandle
           direction={Direction.LEFT}
@@ -569,6 +596,12 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
               />
               <SplitTile
                 ref="splitTile"
+                clicker={clicker}
+                essence={essence}
+                menuStage={visualizationStage}
+              />
+              <SeriesTile
+                ref="seriesTile"
                 clicker={clicker}
                 essence={essence}
                 menuStage={visualizationStage}
@@ -615,6 +648,7 @@ export class CubeView extends React.Component<CubeViewProps, CubeViewState> {
       {this.renderDruidQueryModal()}
       {this.renderRawDataModal()}
       {this.renderViewDefinitionModal()}
+      {this.renderUrlShortenerModal()}
     </div>;
   }
 

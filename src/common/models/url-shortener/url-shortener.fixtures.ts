@@ -14,17 +14,10 @@
  * limitations under the License.
  */
 
-const KiB = 1024;
-const MiB = Math.pow(1024, 2);
-const GiB = Math.pow(1024, 3);
-const TiB = Math.pow(1024, 4);
-const PiB = Math.pow(1024, 5);
-const EiB = Math.pow(1024, 6);
-const ZiB = Math.pow(1024, 7);
-const YiB = Math.pow(1024, 8);
+import { UrlShortener } from "./url-shortener";
 
-export const BYTE_PREFIXES = {
-  KiB, MiB, GiB, TiB, PiB, EiB, ZiB, YiB
-};
+export const FailUrlShortenerJS = "return Promise.reject(new Error('error message'));";
+export const FailUrlShortener = new UrlShortener(FailUrlShortenerJS);
 
-export const METRIC_PREFIXES = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 };
+export const SuccessUrlShortenerJS = "return Promise.resolve('http://foobar');";
+export const SuccessUrlShortener = new UrlShortener(SuccessUrlShortenerJS);

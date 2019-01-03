@@ -41,7 +41,7 @@ import {
 } from "plywood";
 import { hasOwnProperty, isTruthy, makeUrlSafeName, quoteNames, verifyUrlSafeName } from "../../utils/general/general";
 import { getWallTimeString } from "../../utils/time/time";
-import { SortDirection } from "../../view-definitions/version-3/split-definition";
+import { SortDirection } from "../../view-definitions/version-4/split-definition";
 import { Cluster } from "../cluster/cluster";
 import { Dimension } from "../dimension/dimension";
 import { DimensionOrGroupJS } from "../dimension/dimension-group";
@@ -990,7 +990,11 @@ export class DataCube implements Instance<DataCubeValue, DataCubeJS> {
   }
 
   public getDefaultSplits(): Splits {
-    return this.defaultSplitDimensions ? Splits.fromDimensions(this.defaultSplitDimensions) : DataCube.DEFAULT_DEFAULT_SPLITS;
+    if (this.defaultSplitDimensions) {
+      const dimensions = this.defaultSplitDimensions.map(name => this.getDimension(name));
+      return Splits.fromDimensions(dimensions);
+    }
+    return DataCube.DEFAULT_DEFAULT_SPLITS;
   }
 
   public getDefaultDuration(): Duration {

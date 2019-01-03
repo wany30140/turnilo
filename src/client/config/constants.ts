@@ -26,6 +26,8 @@ export const MEASURE_HEIGHT = 27;
 export const CORE_ITEM_WIDTH = 192;
 export const CORE_ITEM_GAP = 8;
 export const BAR_TITLE_WIDTH = 66;
+export const PANEL_TOGGLE_WIDTH = 15;
+export const ADD_TILE_WIDTH = 25;
 
 export const PIN_TITLE_HEIGHT = 36;
 export const PIN_ITEM_HEIGHT = 25;
@@ -58,6 +60,8 @@ export const STRINGS: any = {
   connectNewCluster: "Connect new cluster",
   contains: "Contains",
   convertToFixedTime: "Convert to fixed time",
+  copied: "Copied!",
+  copy: "Copy",
   copyDefinition: "Copy definition",
   copyFixedTimeUrl: "Copy URL - fixed time",
   copyRelativeTimeUrl: "Copy URL - relative time",
@@ -66,6 +70,9 @@ export const STRINGS: any = {
   createDataCube: "Create new cube",
   createCluster: "Create new cluster",
   createCubesFromCluster: "Create cubes from cluster",
+  createShortFixedUrl: "Create Short URL - fixed time",
+  createShortRelativeUrl: "Create Short URL - relative time",
+  createShortUrl: "Create Short URL",
   current: "Current",
   create: "Create",
   cubes: "cubes",
@@ -95,6 +102,7 @@ export const STRINGS: any = {
   exportToTSV: "Export to TSV",
   filter: "Filter",
   floorableDurationsExamples: "e.g. PT2H or P3M",
+  format: "Format",
   generalSettings: "General settings",
   goToUrl: "Go to URL",
   granularity: "Granularity",
@@ -110,6 +118,7 @@ export const STRINGS: any = {
   lastWeek: "Last Week",
   latest: "Latest",
   limit: "Limit",
+  loading: "Loading…",
   logout: "Logout",
   measures: "Measures",
   measure: "Measure",
@@ -136,6 +145,7 @@ export const STRINGS: any = {
   relative: "Relative",
   save: "Save",
   select: "Select",
+  series: "Measure",
   settings: "Settings",
   sortBy: "Sort by",
   fixed: "Fixed",
